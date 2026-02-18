@@ -173,7 +173,7 @@ export default function ScrollClient() {
   useEffect(() => {
     async function fetchNotes() {
       try {
-        const res = await fetch('/api/scroll')
+        const res = await fetch('/scroll-data.json')
         if (!res.ok) throw new Error('Failed to fetch')
         const data = await res.json()
         setNotes(data.notes || [])
