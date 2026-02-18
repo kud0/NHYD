@@ -1,0 +1,620 @@
+// ClassMind - Prisma Schema
+// Study platform for nutrition students
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// PROGRAM MODEL (Top-level course organization)
+// ============================================
+
+model Program {
+  id          String   @id @default(uuid())
+  name        String   // e.g., "NHYD", "CPE"
+  fullName    String   // e.g., "Nutrición Humana y Dietética", "Certificado Personal Trainer"
+  description String?
+  color       String   @default("#3B82F6")
+  icon        String?  // Emoji or icon
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subjects Subject[]
+
+  @@map("programs")
+}
+
+// ============================================
+// CORE CONTENT MODELS
+// ============================================
+
+model Subject {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  semester    Int      @default(1)  // For NHYD: semester number, For CPE: parcial number
+  color       String   @default("#3B82F6")
+  icon        String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Link to program
+  programId   String?
+  program     Program? @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  lessons Lesson[]
+  quizzes Quiz[]
+
+  @@map("subjects")
+}
+
+model Lesson {
+  id            String       @id @default(uuid())
+  title         String
+  description   String?
+  order         Int          @default(0)
+  status        LessonStatus @default(PENDING)
+
+  // Processing status
+  isProcessed   Boolean      @default(false)
+  processedAt   DateTime?
+
+  // Total duration (sum of all parts)
+  totalDuration Int?         // Duration in seconds
+
+  subjectId     String
+  subject       Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A lesson can have multiple audio parts (e.g., Part 1, Part 2)
+  audioParts       AudioPart[]
+  slides           Slide[]
+  summary          Summary?
+  notes            Note[]
+  flashcards       Flashcard[]
+  quizzes          Quiz[]
+  tutorQuestions   TutorQuestion[]
+  annotations      Annotation[]
+
+  @@map("lessons")
+}
+
+// Audio part - supports multiple audio files per lesson
+model AudioPart {
+  id        String @id @default(uuid())
+  title     String // e.g., "Parte 1", "Parte 2"
+  order     Int    @default(0)
+  audioPath String
+  duration  Int?   // Duration in seconds
+
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  transcriptChunks TranscriptChunk[]
+
+  @@map("audio_parts")
+}
+
+enum LessonStatus {
+  PENDING
+  PROCESSING
+  READY
+  ERROR
+}
+
+// ============================================
+// SLIDE & TRANSCRIPT MODELS
+// ============================================
+
+model Slide {
+  id        String @id @default(uuid())
+  order     Int
+  imagePath String
+  ocrText   String? @db.Text
+
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  transcriptMatches TranscriptMatch[]
+  notes             Note[]
+
+  @@map("slides")
+}
+
+model TranscriptChunk {
+  id        String @id @default(uuid())
+  text      String @db.Text
+  startTime Float  // Seconds from start of this audio part
+  endTime   Float  // Seconds from start of this audio part
+
+  // AI-matched slide (optional)
+  matchedSlideId String?
+
+  // Belongs to a specific audio part
+  audioPartId String
+  audioPart   AudioPart @relation(fields: [audioPartId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  matches TranscriptMatch[]
+
+  @@map("transcript_chunks")
+}
+
+model TranscriptMatch {
+  id              String @id @default(uuid())
+  confidenceScore Float  @default(0.0) // 0-1
+
+  slideId           String
+  slide             Slide           @relation(fields: [slideId], references: [id], onDelete: Cascade)
+  transcriptChunkId String
+  transcriptChunk   TranscriptChunk @relation(fields: [transcriptChunkId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([slideId, transcriptChunkId])
+  @@map("transcript_matches")
+}
+
+// ============================================
+// SUMMARY & NOTES
+// ============================================
+
+model Summary {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+  keyPoints String[] // Array of key points
+
+  lessonId String @unique
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("summaries")
+}
+
+model Note {
+  id        String  @id @default(uuid())
+  content   String  @db.Text
+  timestamp Float?  // Optional: link to audio position
+
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  slideId String?
+  slide   Slide?  @relation(fields: [slideId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notes")
+}
+
+// ============================================
+// FLASHCARD / SRS SYSTEM
+// ============================================
+
+model Flashcard {
+  id    String        @id @default(uuid())
+  front String        @db.Text
+  back  String        @db.Text
+  type  FlashcardType @default(CONCEPT)
+
+  // Spaced Repetition (SM-2 algorithm)
+  nextReview   DateTime @default(now())
+  interval     Int      @default(1)     // Days until next review
+  easeFactor   Float    @default(2.5)   // Difficulty multiplier
+  repetitions  Int      @default(0)     // Number of successful reviews
+
+  // Stats
+  lastReviewed DateTime?
+  timesCorrect Int       @default(0)
+  timesWrong   Int       @default(0)
+
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviews FlashcardReview[]
+
+  @@map("flashcards")
+}
+
+enum FlashcardType {
+  CONCEPT
+  DEFINITION
+  PROCESS
+  FACT
+}
+
+model FlashcardReview {
+  id       String         @id @default(uuid())
+  rating   ReviewRating
+  duration Int            // Time spent in seconds
+
+  flashcardId String
+  flashcard   Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+
+  reviewedAt DateTime @default(now())
+
+  @@map("flashcard_reviews")
+}
+
+enum ReviewRating {
+  AGAIN  // 0 - Complete blackout
+  HARD   // 1 - Struggled but got it
+  GOOD   // 2 - Correct with effort
+  EASY   // 3 - Instant recall
+}
+
+// ============================================
+// QUIZ SYSTEM
+// ============================================
+
+model Quiz {
+  id    String   @id @default(uuid())
+  title String
+
+  // Quiz settings
+  timeLimit     Int     @default(30)   // Minutes
+  passThreshold Int     @default(50)   // Percentage to pass
+  maxAttempts   Int     @default(1)    // Max attempts allowed
+  questionCount Int     @default(10)   // Number of questions
+
+  lessonId String?
+  lesson   Lesson? @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  // For parcial quizzes spanning multiple lessons
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  generatedAt DateTime @default(now())
+
+  questions   QuizQuestion[]
+  attempts    QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id          String       @id @default(uuid())
+  type        QuestionType @default(MULTIPLE_CHOICE)
+  question    String       @db.Text
+  options     String[]     // For multiple choice
+  correct     String       // Correct answer
+  explanation String?      @db.Text
+  order       Int          @default(0)
+
+  quizId String
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  answers QuizAnswer[]
+
+  @@map("quiz_questions")
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+}
+
+model QuizAttempt {
+  id        String   @id @default(uuid())
+  score     Float    // Percentage 0-100
+  completed Boolean  @default(false)
+
+  quizId String
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  answers QuizAnswer[]
+
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id        String  @id @default(uuid())
+  answer    String
+  isCorrect Boolean
+
+  questionId String
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  attemptId String
+  attempt   QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  answeredAt DateTime @default(now())
+
+  @@map("quiz_answers")
+}
+
+// ============================================
+// STUDY TRACKING
+// ============================================
+
+model StudySession {
+  id             String   @id @default(uuid())
+  lessonsStudied String[] // Lesson IDs
+
+  // Flashcard stats
+  flashcardsReviewed Int @default(0)
+  correctCount       Int @default(0)
+
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  @@map("study_sessions")
+}
+
+// ============================================
+// PROCESSING QUEUE
+// ============================================
+
+model ProcessingJob {
+  id       String           @id @default(uuid())
+  type     ProcessingType
+  status   ProcessingStatus @default(PENDING)
+
+  // Input data
+  inputData  Json?
+
+  // Results
+  resultData Json?
+  error      String?
+
+  // Progress tracking
+  progress   Int      @default(0) // 0-100
+
+  lessonId String?
+
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@map("processing_jobs")
+}
+
+enum ProcessingType {
+  TRANSCRIBE
+  EXTRACT_SLIDES
+  OCR
+  AI_MATCH
+  GENERATE_SUMMARY
+  GENERATE_FLASHCARDS
+}
+
+enum ProcessingStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// AI TUTOR
+// ============================================
+
+model TutorQuestion {
+  id        String   @id @default(cuid())
+
+  selectedText String   @db.Text
+  question     String   @db.Text
+  answer       String   @db.Text
+
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("tutor_questions")
+}
+
+// ============================================
+// STUDY ANNOTATIONS
+// ============================================
+
+model Annotation {
+  id        String         @id @default(cuid())
+  type      AnnotationType
+  color     String         // yellow, red, green
+
+  // For highlights - the text that was selected
+  selectedText String?     @db.Text
+
+  // For sticky notes - the note content
+  noteContent  String?     @db.Text
+
+  // Position in the document (paragraph index or section name)
+  position     String?
+
+  lessonId  String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("annotations")
+}
+
+enum AnnotationType {
+  HIGHLIGHT
+  STICKY_NOTE
+}
+
+// ============================================
+// KNOWLEDGE BASE (RAG System)
+// ============================================
+
+model KnowledgeChunk {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+
+  // Vector embedding stored via raw SQL (pgvector)
+  // embedding Unsupported("vector(1536)")?
+
+  // Source tracking
+  sourceType  String   // 'transcript', 'slide', 'cornell', 'summary', 'paper'
+  sourceId    String   // Reference to original record
+
+  // Context for filtering
+  lessonId    String?
+  subjectId   String?
+  programId   String?
+
+  // Metadata
+  title       String?
+  tags        String[]
+
+  // Token count for chunking
+  tokenCount  Int      @default(0)
+
+  createdAt   DateTime @default(now())
+
+  @@index([sourceType])
+  @@index([lessonId])
+  @@index([subjectId])
+  @@map("knowledge_chunks")
+}
+
+model Paper {
+  id          String   @id @default(uuid())
+  title       String
+  authors     String?
+  year        Int?
+  abstract    String?  @db.Text
+  filePath    String
+  tags        String[]
+
+  // Processing status
+  isIndexed   Boolean  @default(false)
+  chunkCount  Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("papers")
+}
+
+// ============================================
+// CLIENT SYSTEM
+// ============================================
+
+model Client {
+  id              String   @id @default(uuid())
+  name            String
+  email           String?
+  phone           String?
+
+  // Profile
+  age             Int?
+  gender          String?
+  weight          Float?   // kg
+  height          Float?   // cm
+  activityLevel   String?  // sedentary, light, moderate, active, very_active
+
+  // Goals & Restrictions
+  goals           String[] // weight_loss, muscle_gain, health, performance
+  restrictions    String[] // vegetarian, vegan, gluten_free, lactose_free, allergies
+  conditions      String[] // knee_injury, back_pain, diabetes, hypertension
+  notes           String?  @db.Text
+
+  // Status
+  status          String   @default("active") // active, inactive, archived
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  programs        ClientProgram[]
+  measurements    Measurement[]
+
+  @@map("clients")
+}
+
+model ClientProgram {
+  id          String   @id @default(uuid())
+
+  type        String   // nutrition, training, both
+  title       String
+  content     String   @db.Text  // AI-generated plan (markdown)
+
+  // Sources used for generation
+  sources     String[] // KnowledgeChunk IDs
+
+  // Program period
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String   @default("active") // draft, active, completed, archived
+
+  // AI generation metadata
+  prompt      String?  @db.Text  // The prompt used to generate
+
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("client_programs")
+}
+
+model Measurement {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+
+  // Body measurements
+  weight      Float?   // kg
+  bodyFat     Float?   // percentage
+  muscleMass  Float?   // kg
+
+  // Circumferences (cm)
+  chest       Float?
+  waist       Float?
+  hips        Float?
+  arm         Float?
+  thigh       Float?
+
+  notes       String?
+
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@map("measurements")
+}
+
+// ============================================
+// SAVED Q&As (Chat History)
+// ============================================
+
+model SavedQA {
+  id          String   @id @default(uuid())
+  question    String   @db.Text
+  answer      String   @db.Text
+  sources     Json     @default("[]")  // Array of source references
+
+  createdAt   DateTime @default(now())
+
+  @@map("saved_qas")
+}

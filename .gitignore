@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Next.js
+.next/
+out/
+
+# Production
+build/
+dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Storage (user content - large media files)
+storage/
+
+# Database
+*.sql
+*.dump
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+*.pem
+.vercel
+
+# Root junk (download logs, link files, temp scripts)
+*.log
+*.txt
+*.sh
+links-*.txt
+download-*.log
+browser-console-script.js
+extract-cpe-links.js
+CPE.txt
+cpe-lessons-manifest.json
+
+# Claude Flow / Swarm
+.claude-flow/
+.swarm/
+
+# Docs (generated)
+docs/
