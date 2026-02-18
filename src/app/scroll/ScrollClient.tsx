@@ -147,6 +147,8 @@ export default function ScrollClient() {
   const [playing, setPlaying] = useState(true)
   const [speed, setSpeed] = useState(1)
   const [currentSubject, setCurrentSubject] = useState('')
+  const [showControls, setShowControls] = useState(false)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -427,8 +429,25 @@ export default function ScrollClient() {
         />
       </div>
 
-      {/* Floating control bar */}
-      <div className="fixed bottom-0 left-0 right-0 safe-area-bottom">
+      {/* Tap zone to toggle controls */}
+      <div
+        className="fixed bottom-0 left-0 right-0 h-16 z-10"
+        onClick={() => {
+          setShowControls(v => !v)
+          if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+          hideTimerRef.current = setTimeout(() => setShowControls(false), 5000)
+        }}
+      />
+
+      {/* Floating control bar - hidden by default, tap bottom to show */}
+      <div
+        className="fixed bottom-0 left-0 right-0 safe-area-bottom z-20 transition-all duration-300"
+        style={{
+          transform: showControls ? 'translateY(0)' : 'translateY(100%)',
+          opacity: showControls ? 1 : 0,
+          pointerEvents: showControls ? 'auto' : 'none',
+        }}
+      >
         <div className="mx-auto max-w-[375px] px-3 pb-3">
           <div
             className="flex items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-xl"
@@ -439,7 +458,7 @@ export default function ScrollClient() {
           >
             {/* Play/Pause */}
             <button
-              onClick={() => setPlaying(p => !p)}
+              onClick={(e) => { e.stopPropagation(); setPlaying(p => !p) }}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-200 transition hover:bg-zinc-700 active:scale-95"
               aria-label={playing ? 'Pausar' : 'Reproducir'}
             >
@@ -467,6 +486,7 @@ export default function ScrollClient() {
                 max="3"
                 step="0.1"
                 value={speed}
+                onClick={(e) => e.stopPropagation()}
                 onChange={e => setSpeed(parseFloat(e.target.value))}
                 className="w-full h-1 appearance-none bg-zinc-700 rounded-full outline-none accent-zinc-400"
                 style={{ accentColor: '#a1a1aa' }}
