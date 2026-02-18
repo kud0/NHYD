@@ -5,9 +5,11 @@
 
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+let _openai: OpenAI | null = null
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  return _openai
+}
 
 // Embedding model - good quality/price balance
 const EMBEDDING_MODEL = 'text-embedding-3-small'
@@ -21,7 +23,7 @@ const CHUNK_OVERLAP = 50 // Overlap between chunks
  * Generate embedding for a single text
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await openai.embeddings.create({
+  const response = await getOpenAI().embeddings.create({
     model: EMBEDDING_MODEL,
     input: text.trim(),
   })
@@ -40,7 +42,7 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize).map(t => t.trim())
-    const response = await openai.embeddings.create({
+    const response = await getOpenAI().embeddings.create({
       model: EMBEDDING_MODEL,
       input: batch,
     })
